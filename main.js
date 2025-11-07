@@ -1,6 +1,17 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 
+// Loading management
+const loadingSpinner = document.getElementById('loading-spinner');
+let skyboxLoaded = false;
+let sceneReady = false;
+
+function checkAndHideSpinner() {
+    if (skyboxLoaded && sceneReady) {
+        loadingSpinner.style.display = 'none';
+    }
+}
+
 // Basic scene setup
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0xc4d4b8); // soft daylight background
@@ -56,14 +67,20 @@ const materials = {
     function setSkyboxFromCubemap(files) {
         // files order: [px, nx, py, ny, pz, nz]
         const loader = new THREE.CubeTextureLoader();
-        const cube = loader.load(files);
+        const cube = loader.load(files, () => {
+            skyboxLoaded = true;
+            checkAndHideSpinner();
+        });
         cube.colorSpace = THREE.SRGBColorSpace;
         scene.background = cube;
         return cube;
     }
     function setSkyboxFromEquirect(url) {
         const loader = new THREE.TextureLoader();
-        const tex = loader.load(url);
+        const tex = loader.load(url, () => {
+            skyboxLoaded = true;
+            checkAndHideSpinner();
+        });
         tex.mapping = THREE.EquirectangularReflectionMapping;
         tex.colorSpace = THREE.SRGBColorSpace;
         scene.background = tex;
@@ -394,18 +411,28 @@ function createParticles() {
     return new THREE.Points(g,m);
 }
 
-// Build world
-initializeInstancedMeshes();
-const terrain = createTerrain();
-const forest = populateForest(terrain.heightMap);
-addVoxelsToScene([...terrain.voxels, ...forest]);
-Object.values(instancedMeshes).forEach(bucket => bucket.meshes.forEach(mesh => { if (mesh.count>0){ mesh.instanceMatrix.needsUpdate=true; scene.add(mesh);} }));
+// Build world (wrapped to mark as ready when complete)
+function buildWorld() {
+    initializeInstancedMeshes();
+    const terrain = createTerrain();
+    const forest = populateForest(terrain.heightMap);
+    addVoxelsToScene([...terrain.voxels, ...forest]);
+    Object.values(instancedMeshes).forEach(bucket => bucket.meshes.forEach(mesh => { if (mesh.count>0){ mesh.instanceMatrix.needsUpdate=true; scene.add(mesh);} }));
 
-const water = createWaterPlane();
-const fogLayers = createUnderwaterFogLayers();
-const lilyPads = createLilyPads();
-const particles = createParticles();
-scene.add(fogLayers, water, lilyPads, particles);
+    const water = createWaterPlane();
+    const fogLayers = createUnderwaterFogLayers();
+    const lilyPads = createLilyPads();
+    const particles = createParticles();
+    scene.add(fogLayers, water, lilyPads, particles);
+
+    // Mark scene as ready after everything is built
+    sceneReady = true;
+    checkAndHideSpinner();
+    
+    return particles; // Return particles for animation
+}
+
+const particles = buildWorld();
 
 // setSkyboxFromCubemap([
 //   'textures/skybox/px.jpg', // +X
